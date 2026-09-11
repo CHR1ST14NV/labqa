@@ -6,7 +6,9 @@ import { InspectorRow, Panel, PassFailPill, SectionHeader, SegmentedControl, Tec
 import { STATE_TEST_CASES } from "../domain/state-machine/testCases";
 import { ORDER_STATE_LABELS } from "../domain/state-machine/types";
 import { DECISION_TEST_CASES } from "../domain/decision-table/testCases";
-import { QaTechnique, runDecisionTableSuite, runStateMachineSuite } from "../testing/testRunner";
+import { CONDITION_LABELS } from "../domain/decision-table/types";
+import { DECISION_RULES } from "../domain/decision-table/rules";
+import { QaTechnique, TestRunResult } from "../testing/testRunner";
 import { useQaLab } from "../state/QaLabContext";
 
 type Filter = "all" | QaTechnique;
@@ -20,51 +22,78 @@ interface Row {
   expected: string;
   actual: string;
   rule: string;
-  pass: boolean;
+  // null = caso DEFINIDO pero no incluido todavía en ninguna ejecución real
+  // (pestaña Ejecución). No confundir con `false` (se ejecutó y falló).
+  pass: boolean | null;
+}
+
+// Texto "esperado" de cada caso, calculado a partir del ORÁCULO escrito en
+// testCases.ts (expectedSuccess/expectedFinalState/expectedRuleId) — NUNCA
+// ejecutando el motor. Este catálogo es de DISEÑO, no de ejecución: mostrar
+// esto no cuenta como "correr el caso", por eso puede verse sin haber
+// tocado "Ejecutar" en la pestaña Ejecución.
+function expectedStateLabel(success: boolean, state: (typeof STATE_TEST_CASES)[number]["expectedFinalState"]) {
+  return `${success ? "ACEPTADO" : "RECHAZADO"} / ${ORDER_STATE_LABELS[state]}`;
 }
 
 export function TestCases() {
   const [filter, setFilter] = useState<Filter>("all");
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<Row | null>(null);
-  const { defectModeEnabled } = useQaLab();
+  const { lastRunReport } = useQaLab();
 
-  const stateResults = useMemo(() => runStateMachineSuite(defectModeEnabled), [defectModeEnabled]);
-  const decisionResults = useMemo(() => runDecisionTableSuite(), []);
+  // Resultados de la ÚLTIMA ejecución real disparada desde la pestaña
+  // Ejecución, indexados por id de caso. Si un id no está acá, todavía no
+  // se ejecutó — el catálogo nunca "pre-ejecuta" nada para calcular esto.
+  const lastResultById = useMemo(() => {
+    const map = new Map<string, TestRunResult>();
+    lastRunReport?.results.forEach((result) => map.set(result.id, result));
+    return map;
+  }, [lastRunReport]);
 
   const rows: Row[] = useMemo(() => {
-    const teRows: Row[] = STATE_TEST_CASES.map((testCase, index) => {
-      const result = stateResults[index];
+    const teRows: Row[] = STATE_TEST_CASES.map((testCase) => {
+      const lastResult = lastResultById.get(testCase.id);
       return {
         id: testCase.id,
         technique: "ESTADOS",
         scenario: testCase.name,
         precondition: testCase.precondition,
         input: `${ORDER_STATE_LABELS[testCase.initialState]} + ${testCase.steps.map((s) => s.event).join(" → ")}`,
-        expected: result.expected,
-        actual: result.actual,
-        rule: result.ruleId,
-        pass: result.pass,
+        expected: expectedStateLabel(testCase.expectedSuccess, testCase.expectedFinalState),
+        actual: lastResult?.actual ?? "Sin ejecutar",
+        rule: testCase.expectedRuleId,
+        pass: lastResult?.pass ?? null,
       };
     });
 
-    const tdRows: Row[] = DECISION_TEST_CASES.map((testCase, index) => {
-      const result = decisionResults[index];
+    const tdRows: Row[] = DECISION_TEST_CASES.map((testCase) => {
+      const rule = DECISION_RULES.find((candidate) => candidate.id === testCase.ruleId);
+      const conditionsLabel = rule
+        ? (Object.keys(CONDITION_LABELS) as Array<keyof typeof CONDITION_LABELS>)
+            .map((key) => `${CONDITION_LABELS[key]}=${rule.conditions[key] ? "Sí" : "No"}`)
+            .join(", ")
+        : "";
+      const lastResult = lastResultById.get(testCase.id);
+      const expected = `${testCase.expectedDiscountPercent}% descuento${
+        testCase.expectedCouponRejected ? ", cupón rechazado" : ""
+      }`;
+
       return {
         id: testCase.id,
         technique: "DECISION",
         scenario: `Regla ${testCase.ruleId}`,
-        precondition: result.input,
-        input: result.input,
-        expected: result.expected,
-        actual: result.actual,
+        precondition: conditionsLabel,
+        input: conditionsLabel,
+        expected,
+        actual: lastResult?.actual ?? "Sin ejecutar",
         rule: testCase.ruleId,
-        pass: result.pass,
+        pass: lastResult?.pass ?? null,
       };
     });
 
     return [...teRows, ...tdRows];
-  }, [stateResults, decisionResults]);
+  }, [lastResultById]);
 
   const filtered = rows.filter((row) => {
     if (filter !== "all" && row.technique !== filter) return false;

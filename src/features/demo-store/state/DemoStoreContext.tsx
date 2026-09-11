@@ -82,6 +82,34 @@ const DEFAULT_DRAFT: OrderDraft = {
 // Es solo un correlativo de UI para la demo, no un identificador de negocio.
 let demoOrderSequence = 0;
 
+// Cálculo PURO de "qué pasa si disparo este evento desde este estado" —
+// deliberadamente separado de cualquier hook de React para que:
+//   1. sea trivial de testear sin renderizar nada (ver
+//      DemoStoreContext.test.ts), y
+//   2. attemptEvent pueda llamarlo UNA sola vez y usar el resultado para dos
+//      setState independientes, en vez de recalcularlo (con efectos
+//      secundarios) dentro del updater de alguno de los dos.
+// No repite ninguna regla de negocio: es una fachada de transitionOrder
+// (el motor real) más el mapeo a las etiquetas ya usadas por el timeline.
+export function computeOrderTransition(
+  currentState: OrderState,
+  event: OrderEvent,
+  daysSinceDelivery: number,
+): { resultingState: OrderState; timelineEntry: Omit<OrderTimelineEntry, "time"> } {
+  const result = transitionOrder(currentState, event, { daysSinceDelivery });
+
+  return {
+    resultingState: result.resultingState,
+    timelineEntry: {
+      previousStateLabel: ORDER_STATE_LABELS[result.previousState],
+      eventLabel: ORDER_EVENT_LABELS[event],
+      resultingStateLabel: ORDER_STATE_LABELS[result.resultingState],
+      accepted: result.success,
+      message: result.message,
+    },
+  };
+}
+
 function buildQuote(draft: OrderDraft): OrderQuote {
   // El precio solo llega acá con un valor válido (>0): la UI no habilita
   // "Calcular descuento" hasta entonces. `?? 0` es solo una guarda de tipos.
@@ -173,28 +201,38 @@ export function DemoStoreProvider({ children }: { children: ReactNode }) {
   // delega SIEMPRE en transitionOrder (motor de estados) y se adopta lo que
   // devuelve. La app bajo prueba nunca pasa defectModeEnabled — ese flag es
   // exclusivo del contexto de pruebas del QA Lab.
+  //
+  // IMPORTANTE (bug corregido): el updater de setOrder debe ser PURO. Antes,
+  // computeOrderTransition + setTimeline vivían DENTRO del callback
+  // `prev => ...` de setOrder. Con React 18 StrictMode, React invoca dos
+  // veces (en desarrollo) cualquier función updater pasada a setState,
+  // precisamente para detectar que no sea pura — y como ese updater
+  // disparaba setTimeline como efecto secundario, cada clic terminaba
+  // agregando DOS entradas idénticas al historial. La transición en sí no
+  // se duplicaba (el resultado era el mismo en ambas invocaciones), pero el
+  // side effect sí. La solución: calcular la transición UNA vez, fuera de
+  // cualquier updater, y llamar a setTimeline con ese resultado ya
+  // calculado; setOrder recibe un updater que solo lee `current` y agrega
+  // el estado nuevo — cero efectos secundarios, así que no importa cuántas
+  // veces React lo invoque internamente.
   const attemptEvent = useCallback(
     (event: OrderEvent) => {
-      setOrder((current) => {
-        if (!current) return current;
-        const result = transitionOrder(current.state, event, { daysSinceDelivery });
+      if (!order) return;
 
-        setTimeline((prev) => [
-          {
-            time: new Date().toLocaleTimeString("es-GT"),
-            previousStateLabel: ORDER_STATE_LABELS[result.previousState],
-            eventLabel: ORDER_EVENT_LABELS[event],
-            resultingStateLabel: ORDER_STATE_LABELS[result.resultingState],
-            accepted: result.success,
-            message: result.message,
-          },
-          ...prev,
-        ]);
+      const { resultingState, timelineEntry } = computeOrderTransition(
+        order.state,
+        event,
+        daysSinceDelivery,
+      );
 
-        return { ...current, state: result.resultingState };
-      });
+      setTimeline((prev) => [
+        { time: new Date().toLocaleTimeString("es-GT"), ...timelineEntry },
+        ...prev,
+      ]);
+
+      setOrder((current) => (current ? { ...current, state: resultingState } : current));
     },
-    [daysSinceDelivery],
+    [order, daysSinceDelivery],
   );
 
   const resetOrder = useCallback(() => {

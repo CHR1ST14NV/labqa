@@ -54,7 +54,22 @@ export function StatusPill({
 }
 
 // Veredicto de un CASO DE PRUEBA (TestRunner / TestCases / Evidencia).
-export function PassFailPill({ pass, size }: { pass: boolean; size?: "sm" | "md" }) {
+//
+// `pass` es tri-estado a propósito: un caso DISEÑADO no queda "aprobado"
+// solo por existir en el catálogo. `null` significa "todavía no se ejecutó
+// ninguna suite que cubra este caso" — distinto de `false` (se ejecutó y
+// falló). Ver TestCases.tsx para el único lugar que necesita este tercer
+// estado; TestRunner/EvidenceLog siguen pasando siempre boolean porque ahí
+// el caso, por definición, ya se ejecutó.
+export function PassFailPill({ pass, size }: { pass: boolean | null; size?: "sm" | "md" }) {
+  if (pass === null) {
+    return (
+      <StatusPill tone="neutral" size={size}>
+        SIN EJECUTAR
+      </StatusPill>
+    );
+  }
+
   return (
     <StatusPill
       tone={pass ? "green" : "red"}
