@@ -233,7 +233,7 @@ export function Metric({
       >
         {value}
       </p>
-      <p className="mt-1 text-[11px] font-bold uppercase tracking-[0.1em] text-slate-400">{label}</p>
+      <p className="mt-1 text-xs font-bold uppercase tracking-[0.1em] text-slate-400">{label}</p>
     </div>
   );
 }

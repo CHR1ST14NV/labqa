@@ -13,6 +13,7 @@ function q(amount: number): string {
 // premium. No recalcula nada: solo lee `quote`.
 export function OrderSummaryPanel() {
   const { draft, quote, hasCalculated, confirmOrder, order } = useDemoStore();
+  const subtotalValid = draft.subtotal !== null && draft.subtotal > 0;
 
   return (
     <Panel className="lg:sticky lg:top-6">
@@ -24,7 +25,7 @@ export function OrderSummaryPanel() {
       </p>
 
       <div className="mt-5 space-y-2.5 border-t border-slate-100 pt-5 text-sm">
-        <Row label="Subtotal" value={q(draft.subtotal)} />
+        <Row label="Subtotal" value={subtotalValid ? q(draft.subtotal as number) : "—"} />
         <Row
           label="Descuento"
           value={hasCalculated ? `${quote.discountPercent}% · ${q(quote.discountAmount)}` : "—"}

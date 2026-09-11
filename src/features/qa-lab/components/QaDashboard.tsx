@@ -24,7 +24,6 @@ import { STATE_TEST_CASES } from "../domain/state-machine/testCases";
 import { TRANSITION_RULES } from "../domain/state-machine/transitions";
 import { DECISION_TEST_CASES } from "../domain/decision-table/testCases";
 import { DECISION_RULES } from "../domain/decision-table/rules";
-import { DEFECT_MODE_EXPLANATION } from "../testing/defectInjection";
 import { QaLabProvider, useQaLab } from "../state/QaLabContext";
 import { DemoStoreApp } from "../../demo-store/components/DemoStoreApp";
 import { DemoStoreProvider } from "../../demo-store/state/DemoStoreContext";
@@ -99,12 +98,12 @@ function QaLabShell({ onExit }: { onExit: () => void }) {
               <MiniToggle
                 active={presentationMode}
                 onClick={() => togglePresentationMode(!presentationMode)}
-                label="Presentación"
+                label="Modo presentación"
               />
               <MiniToggle
                 active={defectModeEnabled}
                 onClick={() => toggleDefectMode(!defectModeEnabled)}
-                label="Defecto"
+                label="Inyección de defecto"
                 danger
               />
             </div>
@@ -115,8 +114,13 @@ function QaLabShell({ onExit }: { onExit: () => void }) {
         </div>
 
         {defectModeEnabled ? (
-          <div className="border-t border-rose-200 bg-rose-600 px-6 py-2 text-center text-[13px] font-semibold text-white lg:px-10">
-            INYECCIÓN DE DEFECTO ACTIVA — {DEFECT_MODE_EXPLANATION}
+          <div className="border-t border-rose-200 bg-rose-600 px-6 py-2.5 text-center text-white lg:px-10">
+            <p className="text-[13px] font-bold uppercase tracking-wide">
+              Inyección de defecto activa
+            </p>
+            <p className="mt-0.5 text-[12.5px] font-medium text-rose-50">
+              Se alteró deliberadamente la regla T11 para demostrar la detección de un defecto.
+            </p>
           </div>
         ) : null}
 
@@ -132,7 +136,7 @@ function QaLabShell({ onExit }: { onExit: () => void }) {
               <button
                 key={item.key}
                 onClick={() => setScreen(item.key)}
-                className={`flex items-center gap-1.5 rounded-full px-3.5 py-2 text-[13.5px] font-semibold transition-all duration-150 ${
+                className={`flex items-center gap-1.5 rounded-full px-3.5 py-2 text-sm font-semibold transition-all duration-150 ${
                   active ? "bg-slate-900 text-white" : "text-slate-500 hover:bg-slate-100 hover:text-slate-800"
                 }`}
               >
@@ -212,7 +216,18 @@ function OverviewScreen({ onNavigate }: { onNavigate: (screen: QaScreen) => void
 
       <div className="grid grid-cols-2 gap-8 sm:grid-cols-4">
         <Metric label="Casos de prueba" value={TOTAL_CASES} big />
-        <Metric label="Aprobados" value={passRate !== null ? `${passRate}%` : "—"} tone="green" big />
+        <Metric
+          label="Aprobados"
+          value={
+            passRate !== null ? (
+              `${passRate}%`
+            ) : (
+              <span className="block text-2xl tracking-wide">SIN EJECUTAR</span>
+            )
+          }
+          tone={passRate !== null ? "green" : "neutral"}
+          big
+        />
         <Metric label="Reglas" value={TOTAL_RULES} big />
         <Metric label="Técnicas" value={2} big />
       </div>

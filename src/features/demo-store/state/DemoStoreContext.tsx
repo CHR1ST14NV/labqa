@@ -30,7 +30,10 @@ import {
 export interface OrderDraft {
   clienteNombre: string;
   productoNombre: string;
-  subtotal: number;
+  // null = campo vacío todavía (el usuario no escribió un precio). Se
+  // mantiene distinto de 0 a propósito: 0 es un valor inválido rechazado
+  // por la validación, vacío es simplemente "todavía no hay dato".
+  subtotal: number | null;
   vip: boolean;
   couponValid: boolean;
   allowsPromotions: boolean;
@@ -69,7 +72,7 @@ export interface OrderTimelineEntry {
 const DEFAULT_DRAFT: OrderDraft = {
   clienteNombre: "",
   productoNombre: "",
-  subtotal: 0,
+  subtotal: null,
   vip: false,
   couponValid: false,
   allowsPromotions: true,
@@ -80,9 +83,13 @@ const DEFAULT_DRAFT: OrderDraft = {
 let demoOrderSequence = 0;
 
 function buildQuote(draft: OrderDraft): OrderQuote {
+  // El precio solo llega acá con un valor válido (>0): la UI no habilita
+  // "Calcular descuento" hasta entonces. `?? 0` es solo una guarda de tipos.
+  const subtotal = draft.subtotal ?? 0;
+
   const conditions: DecisionConditions = {
     vip: draft.vip,
-    amountGte500: draft.subtotal >= 500,
+    amountGte500: subtotal >= 500,
     couponValid: draft.couponValid,
     allowsPromotions: draft.allowsPromotions,
   };
@@ -91,13 +98,13 @@ function buildQuote(draft: OrderDraft): OrderQuote {
   // a mano en el formulario.
   const actions = evaluateDecision(conditions);
   const rule = findDecisionRule(conditions);
-  const discountAmount = Math.round(draft.subtotal * (actions.discountPercent / 100) * 100) / 100;
+  const discountAmount = Math.round(subtotal * (actions.discountPercent / 100) * 100) / 100;
 
   return {
     conditions,
     discountPercent: actions.discountPercent,
     discountAmount,
-    total: Math.round((draft.subtotal - discountAmount) * 100) / 100,
+    total: Math.round((subtotal - discountAmount) * 100) / 100,
     couponRejected: actions.rejectCoupon,
     ruleId: rule?.id ?? "N/A",
   };
@@ -108,6 +115,7 @@ interface DemoStoreContextValue {
   updateDraft: (patch: Partial<OrderDraft>) => void;
   quote: OrderQuote;
   hasCalculated: boolean;
+  canCalculate: boolean;
   calculateQuote: () => void;
   order: ConfirmedOrder | null;
   timeline: OrderTimelineEntry[];
@@ -134,7 +142,19 @@ export function DemoStoreProvider({ children }: { children: ReactNode }) {
     setDraft((prev) => ({ ...prev, ...patch }));
   }, []);
 
-  const calculateQuote = useCallback(() => setHasCalculated(true), []);
+  // Único lugar donde vive la regla de "formulario listo para cotizar":
+  // cliente y producto no vacíos, precio numérico y mayor a cero. La UI
+  // (OrderForm) solo lee este valor para habilitar/deshabilitar el botón.
+  const canCalculate =
+    draft.clienteNombre.trim().length > 0 &&
+    draft.productoNombre.trim().length > 0 &&
+    draft.subtotal !== null &&
+    draft.subtotal > 0;
+
+  const calculateQuote = useCallback(() => {
+    if (!canCalculate) return;
+    setHasCalculated(true);
+  }, [canCalculate]);
 
   const confirmOrder = useCallback(() => {
     demoOrderSequence += 1;
@@ -142,7 +162,7 @@ export function DemoStoreProvider({ children }: { children: ReactNode }) {
       code: `DEMO-${String(demoOrderSequence).padStart(3, "0")}`,
       clienteNombre: draft.clienteNombre.trim() || "Consumidor final",
       productoNombre: draft.productoNombre.trim() || "Producto sin nombre",
-      subtotal: draft.subtotal,
+      subtotal: draft.subtotal ?? 0,
       quote,
       state: OrderState.CREATED,
     });
@@ -196,6 +216,7 @@ export function DemoStoreProvider({ children }: { children: ReactNode }) {
       updateDraft,
       quote,
       hasCalculated,
+      canCalculate,
       calculateQuote,
       order,
       timeline,
@@ -211,6 +232,7 @@ export function DemoStoreProvider({ children }: { children: ReactNode }) {
       updateDraft,
       quote,
       hasCalculated,
+      canCalculate,
       calculateQuote,
       order,
       timeline,
